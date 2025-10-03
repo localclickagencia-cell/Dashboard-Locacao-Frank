@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -28,16 +27,11 @@
     .table-wrapper{border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:420px;background:rgba(0,0,0,.08)}
     .table{width:100%;border-collapse:collapse;font-size:12px;color:var(--text)} .table th,.table td{border-bottom:1px solid var(--border);padding:8px;text-align:right;white-space:nowrap}
     .table th:first-child,.table td:first-child{text-align:left;position:sticky;left:0;background:rgba(10,16,35,.85)}
-    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0} button{background:var(--accent);border:none;border-radius:10px;padding:8px 12px;color:#00122a;font-weight:700;cursor:pointer}
-    .muted-btn{background:var(--chip);border:1px solid var(--border);color:var(--text);font-weight:600} .error{color:#ff8888;font-size:12px}
+    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0} .error{color:#ff8888;font-size:12px}
     @media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.col-6,.col-8,.col-4{grid-column:1/-1}}
-    .diag{margin-top:12px;font-size:12px;color:#b9c8ef} .diag code{background:#0e1533;border:1px solid var(--border);padding:2px 6px;border-radius:6px}
   </style>
 </head>
 <body>
-  <style>.diag{display:none!important}</style>
-  <button id="toggleDiag" style="position:fixed;right:12px;top:12px;z-index:9999;background:#1e2a57;border:1px solid #213063;color:#cfe3ff;padding:6px 10px;border-radius:10px;cursor:pointer;font-family:Inter,system-ui;display:none">Mostrar diagnóstico</button>
-
   <header>
     <div>
       <h1>Dashboard (LIVE) — Locação de Imóveis</h1>
@@ -52,8 +46,6 @@
         <option value="30">Últimos 30 dias</option>
         <option value="90">Últimos 90 dias</option>
       </select>
-      <button class="muted-btn" id="clearFilters">Limpar filtros</button>
-      <button id="exportCSV">Exportar CSV</button>
     </div>
   </header>
 
@@ -78,7 +70,6 @@
           </div>
           <svg id="funnelSVG" class="funnel-svg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
-        <div class="diag" id="diagTrafego"></div>
       </div>
 
       <div class="card col-6">
@@ -93,10 +84,8 @@
 
       <div class="card col-4">
         <h3>Resumo Diário</h3>
-        <div class="actions"><button class="muted-btn" id="toggleCols">Alternar colunas</button></div>
         <div class="table-wrapper"><table class="table" id="dataTable"></table></div>
         <div id="error" class="error"></div>
-        <div class="diag" id="diagComercial"></div>
       </div>
     </div>
   </div>
@@ -106,26 +95,18 @@
     const TRAFEGO_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSORIk5clZR9MB9COpyueD-tG1kwsIaGOJrtiihzOxg31g454Vxru6EcHjWKVq72lcMjDwyR49HkB5u/pub?gid=1952318202&single=true&output=csv";
     const COMERCIAL_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSORIk5clZR9MB9COpyueD-tG1kwsIaGOJrtiihzOxg31g454Vxru6EcHjWKVq72lcMjDwyR49HkB5u/pub?gid=2080509733&single=true&output=csv";
 
-    // Cabeçalhos exatos (conforme seus prints)
+    // Cache-busting + auto-refresh (20 min sempre ativo)
+    function cacheBust(url){ const sep = url.includes("?") ? "&" : "?"; return url + sep + "_=" + Date.now(); }
+    setInterval(() => loadData(true), 20*60*1000); // 20 minutos
+
+    // Cabeçalhos exatos (conforme sua planilha)
     const H = {
       T: {
-        data: ['Data'],
-        impressoes: ['Impressões'],
-        alcance: ['Alcance'],
-        frequencia: ['Frequência'],
-        gasto: ['Valor Gasto (R$)'],
-        cpm: ['CPM (R$)'],
-        ctr: ['CTR (%)'],
-        cpc: ['CPC (R$)'],
-        cliques: ['Cliques no Link'],
-        conversas: ['Conversas no WhatsApp'],
-        custo_conversa: ['Custo por Conversa (R$)']
+        data: ['Data'], impressoes: ['Impressões'], alcance: ['Alcance'], frequencia: ['Frequência'],
+        gasto: ['Valor Gasto (R$)'], cpm: ['CPM (R$)'], ctr: ['CTR (%)'], cpc: ['CPC (R$)'],
+        cliques: ['Cliques no Link'], conversas: ['Conversas no WhatsApp'], custo_conversa: ['Custo por Conversa (R$)']
       },
-      C: {
-        data: ['Data'],
-        reservas: ['Reservas Fechadas'],
-        receita: ['Receita Gerada (R$)']
-      }
+      C: { data: ['Data'], reservas: ['Reservas Fechadas'], receita: ['Receita Gerada (R$)'] }
     };
 
     const fmtMoney = v => v?.toLocaleString('pt-BR', {style:'currency', currency:'BRL'}) ?? '—';
@@ -135,7 +116,6 @@
     const parseNum = (x) => { 
       if (x===null || x===undefined || x==='') return 0;
       const s=(''+x).trim();
-      // remove R$, espaços, etc.
       const cleaned = s.replace(/R\$|\s/g,'').replace(/\./g,'').replace(',','.');
       const n = parseFloat(cleaned);
       return isNaN(n) ? 0 : n;
@@ -144,10 +124,8 @@
     function toDateISO(s){
       if(!s) return null;
       const str=(''+s).trim();
-      // tenta DD/MM/AAAA
       const m = str.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
       if (m){ const d=m[1].padStart(2,'0'), mo=m[2].padStart(2,'0'), y=m[3].length===2? ('20'+m[3]): m[3]; return `${y}-${mo}-${d}`; }
-      // tenta ISO
       if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
       const d=new Date(str); if(!isNaN(d)) return d.toISOString().slice(0,10);
       return null;
@@ -159,56 +137,28 @@
 
     function fetchCSV(url){
       return new Promise((resolve, reject) => {
-        Papa.parse(url, { download: true, header: true, complete: r => resolve(r), error: err => reject(err) });
+        Papa.parse(cacheBust(url), { download: true, header: true, complete: r => resolve(r), error: err => reject(err) });
       });
     }
 
     function normalizeTrafego(rows, headers){
       const map = {
-        data: headerOf(headers, H.T.data),
-        impressoes: headerOf(headers, H.T.impressoes),
-        alcance: headerOf(headers, H.T.alcance),
-        frequencia: headerOf(headers, H.T.frequencia),
-        gasto: headerOf(headers, H.T.gasto),
-        cpm: headerOf(headers, H.T.cpm),
-        ctr: headerOf(headers, H.T.ctr),
-        cpc: headerOf(headers, H.T.cpc),
-        cliques: headerOf(headers, H.T.cliques),
-        conversas: headerOf(headers, H.T.conversas),
+        data: headerOf(headers, H.T.data), impressoes: headerOf(headers, H.T.impressoes),
+        alcance: headerOf(headers, H.T.alcance), frequencia: headerOf(headers, H.T.frequencia),
+        gasto: headerOf(headers, H.T.gasto), cpm: headerOf(headers, H.T.cpm),
+        ctr: headerOf(headers, H.T.ctr), cpc: headerOf(headers, H.T.cpc),
+        cliques: headerOf(headers, H.T.cliques), conversas: headerOf(headers, H.T.conversas),
         custo_conversa: headerOf(headers, H.T.custo_conversa)
       };
-      const found = Object.fromEntries(Object.entries(map).map(([k,v])=>[k, v||'—']));
-      /* debug hidden */ void( 'Mapeamento Tráfego → ' + Object.entries(found).map(([k,v])=>`<code>${k}</code>=<code>${v}</code>`).join(' · ');
-
-      return rows.map(r => ({
-        data: toDateISO(r[map.data]),
-        impressoes: parseNum(r[map.impressoes]),
-        alcance: parseNum(r[map.alcance]),
-        frequencia: parseNum(r[map.frequencia]),
-        gasto: parseNum(r[map.gasto]),
-        cpm: parseNum(r[map.cpm]),
-        ctr: parseNum(r[map.ctr]),
-        cpc: parseNum(r[map.cpc]),
-        cliques: parseNum(r[map.cliques]),
-        conversas: parseNum(r[map.conversas]),
-        custo_conversa: parseNum(r[map.custo_conversa])
-      })).filter(r=>r.data);
+      return rows.map(r => ({ data: toDateISO(r[map.data]), impressoes: parseNum(r[map.impressoes]), alcance: parseNum(r[map.alcance]),
+        frequencia: parseNum(r[map.frequencia]), gasto: parseNum(r[map.gasto]), cpm: parseNum(r[map.cpm]),
+        ctr: parseNum(r[map.ctr]), cpc: parseNum(r[map.cpc]), cliques: parseNum(r[map.cliques]),
+        conversas: parseNum(r[map.conversas]), custo_conversa: parseNum(r[map.custo_conversa]) })).filter(r=>r.data);
     }
 
     function normalizeComercial(rows, headers){
-      const map = {
-        data: headerOf(headers, H.C.data),
-        reservas: headerOf(headers, H.C.reservas),
-        receita: headerOf(headers, H.C.receita),
-      };
-      const found = Object.fromEntries(Object.entries(map).map(([k,v])=>[k, v||'—']));
-      /* debug hidden */ void( 'Mapeamento Comercial → ' + Object.entries(found).map(([k,v])=>`<code>${k}</code>=<code>${v}</code>`).join(' · ');
-
-      return rows.map(r => ({
-        data: toDateISO(r[map.data]),
-        reservas: parseNum(r[map.reservas]),
-        receita: parseNum(r[map.receita]),
-      })).filter(r=>r.data);
+      const map = { data: headerOf(headers, H.C.data), reservas: headerOf(headers, H.C.reservas), receita: headerOf(headers, H.C.receita) };
+      return rows.map(r => ({ data: toDateISO(r[map.data]), reservas: parseNum(r[map.reservas]), receita: parseNum(r[map.receita]) })).filter(r=>r.data);
     }
 
     function joinByDate(trafego, comercial){
@@ -234,7 +184,7 @@
 
     let DATA=[];
 
-    async function loadData(){
+    async function loadData(isAuto=false){
       const error = document.getElementById('error'); error.textContent='';
       try{
         const [tRes, cRes] = await Promise.all([fetchCSV(TRAFEGO_CSV_URL), fetchCSV(COMERCIAL_CSV_URL)]);
@@ -243,28 +193,18 @@
         const trafego = normalizeTrafego(tRes.data||[], tHeaders);
         const comercial = normalizeComercial(cRes.data||[], cHeaders);
         DATA = joinByDate(trafego, comercial);
-        initDates(DATA);
+        if(!DATA.length){ error.textContent = 'Nenhum dado carregado. Verifique filtros, nomes de colunas e publicação do CSV.'; return; }
+        if(!isAuto) initDates(DATA);
         renderAll();
-      }catch(e){
-        error.textContent = 'Erro ao carregar dados: ' + (e?.message||e);
-      }
+      }catch(e){ error.textContent = 'Erro ao carregar dados: ' + (e?.message||e); }
     }
 
-    function initDates(rows){
-      if (!rows.length) return;
-      const min = new Date(rows[0].data);
-      const max = new Date(rows[rows.length-1].data);
-      const fmt = d => d.toISOString().slice(0,10);
-      document.getElementById('startDate').value = fmt(min);
-      document.getElementById('endDate').value = fmt(max);
-    }
+    function initDates(rows){ if (!rows.length) return; const min = new Date(rows[0].data); const max = new Date(rows[rows.length-1].data); const fmt = d => d.toISOString().slice(0,10); document.getElementById('startDate').value = fmt(min); document.getElementById('endDate').value = fmt(max); }
 
     function aggregate(rows){
-      const agg = rows.reduce((a,r)=>({
-        imp:a.imp+(r.impressoes||0), alc:a.alc+(r.alcance||0), spend:a.spend+(r.gasto||0),
+      const agg = rows.reduce((a,r)=>({ imp:a.imp+(r.impressoes||0), alc:a.alc+(r.alcance||0), spend:a.spend+(r.gasto||0),
         clicks:a.clicks+(r.cliques||0), chat:a.chat+(r.conversas||0), res:a.res+(r.reservas||0),
-        rev:a.rev+(r.receita||0), cpm_sum:a.cpm_sum+(r.cpm||0), days:a.days+1
-      } ),{imp:0,alc:0,spend:0,clicks:0,chat:0,res:0,rev:0,cpm_sum:0,days:0});
+        rev:a.rev+(r.receita||0), cpm_sum:a.cpm_sum+(r.cpm||0), days:a.days+1 } ),{imp:0,alc:0,spend:0,clicks:0,chat:0,res:0,rev:0,cpm_sum:0,days:0});
       const cpmMedio = agg.days ? agg.cpm_sum/agg.days : 0;
       const custoConversa = agg.chat ? agg.spend/agg.chat : 0;
       const custoReserva = agg.res ? agg.spend/agg.res : 0;
@@ -372,25 +312,14 @@
       html+='</tbody>'; table.innerHTML=html;
     }
 
-    function filterByDate(data){
-      const s=document.getElementById('startDate').value; const e=document.getElementById('endDate').value;
-      return data.filter(d=>{ const dt=new Date(d.data); if (s && dt < new Date(s)) return false; if (e && dt > new Date(e)) return false; return true; });
-    }
-
-    function renderAll(){
-      const rows=filterByDate(DATA);
-      renderKPIs(rows); renderCharts(rows); renderTable(rows);
-    }
+    function filterByDate(data){ const s=document.getElementById('startDate').value; const e=document.getElementById('endDate').value; return data.filter(d=>{ const dt=new Date(d.data); if (s && dt < new Date(s)) return false; if (e && dt > new Date(e)) return false; return true; }); }
+    function renderAll(){ const rows=filterByDate(DATA); renderKPIs(rows); renderCharts(rows); renderTable(rows); }
 
     document.getElementById('startDate').addEventListener('change', renderAll);
     document.getElementById('endDate').addEventListener('change', renderAll);
     document.getElementById('preset').addEventListener('change', (e)=>{ const days=parseInt(e.target.value||'0',10); if (!days||!DATA.length) return; const max=new Date(DATA[DATA.length-1].data); const min=new Date(max); min.setDate(min.getDate()-days+1); const fmt=d=>d.toISOString().slice(0,10); document.getElementById('startDate').value=fmt(min); document.getElementById('endDate').value=fmt(max); renderAll(); });
-    document.getElementById('clearFilters').addEventListener('click', ()=>{ document.getElementById('startDate').value=''; document.getElementById('endDate').value=''; document.getElementById('preset').value=''; renderAll(); });
-    document.getElementById('exportCSV').addEventListener('click', ()=>{ if (!DATA.length) return; const cols=Object.keys(DATA[0]); const lines=[cols.join(';')].concat(DATA.map(r=>cols.map(c=>r[c]).join(';'))); const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='dashboard_locacao_live.csv'; a.click(); URL.revokeObjectURL(url); });
 
-    // Toggle tabela
-    document.getElementById('toggleCols').addEventListener('click', ()=>{ compact=!compact; renderTable(filterByDate(DATA)); });
-
+    // primeira carga
     loadData();
   </script>
 </body>
